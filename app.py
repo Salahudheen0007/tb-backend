@@ -236,19 +236,21 @@ async def explain_endpoint(file: UploadFile = File(...)):
 
     explainer = lime_image.LimeImageExplainer()
     explanation = explainer.explain_instance(
-        img_np,
-        batch_predict,
-        top_labels=1,
-        hide_color=0,
-        num_samples=20   # reduce for speed
-    )
+    img_np,
+    batch_predict,
+    top_labels=1,
+    hide_color=0,
+    num_samples=10,
+    distance_metric="cosine"
+)
 
-    temp, mask = explanation.get_image_and_mask(
-        explanation.top_labels[0],
-        positive_only=True,
-        num_features=5,
-        hide_rest=False
-    )
+temp, mask = explanation.get_image_and_mask(
+    explanation.top_labels[0],
+    positive_only=True,
+    num_features=3,
+    hide_rest=True
+)
+
 
     lime_img = mark_boundaries(temp / 255.0, mask)
     lime_img = (lime_img * 255).astype(np.uint8)
