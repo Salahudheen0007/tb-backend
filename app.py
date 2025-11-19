@@ -240,7 +240,7 @@ async def explain_endpoint(file: UploadFile = File(...)):
         batch_predict,
         top_labels=1,
         hide_color=0,
-        num_samples=80   # reduce for speed
+        num_samples=20   # reduce for speed
     )
 
     temp, mask = explanation.get_image_and_mask(
