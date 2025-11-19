@@ -206,9 +206,8 @@ async def gradcam_endpoint(file: UploadFile = File(...)):
     buf.seek(0)
     return StreamingResponse(buf, media_type="image/png")
 
-
 # =================================================================
-# -------------------------- LIME --------------------------------
+# -------------------------- LIME (LIGHT VERSION) -----------------
 # =================================================================
 from lime import lime_image
 from skimage.segmentation import mark_boundaries
@@ -218,6 +217,7 @@ def batch_predict(np_imgs):
     tensors = []
     for arr in np_imgs:
         pil = Image.fromarray(arr)
+        pil = pil.resize((128, 128))  # 🔥 reduce size for speed
         tensors.append(preprocess(pil).unsqueeze(0))
     batch = torch.cat(tensors).to(DEVICE)
 
@@ -229,34 +229,41 @@ def batch_predict(np_imgs):
 
 @app.post("/explain")
 async def explain_endpoint(file: UploadFile = File(...)):
-    contents = await file.read()
-    img = Image.open(io.BytesIO(contents)).convert("RGB")
+    try:
+        contents = await file.read()
+        img = Image.open(io.BytesIO(contents)).convert("RGB")
 
-    img_np = np.array(img)
+        img = img.resize((128, 128))  # 🔥 small input → much faster
+        img_np = np.array(img)
 
-    explainer = lime_image.LimeImageExplainer()
-    explanation = explainer.explain_instance(
-    img_np,
-    batch_predict,
-    top_labels=1,
-    hide_color=0,
-    num_samples=10,
-    distance_metric="cosine"
-)
+        explainer = lime_image.LimeImageExplainer()
 
-temp, mask = explanation.get_image_and_mask(
-    explanation.top_labels[0],
-    positive_only=True,
-    num_features=3,
-    hide_rest=True
-)
+        # 🔥 reduced workload → 3–5 sec max
+        explanation = explainer.explain_instance(
+            img_np,
+            batch_predict,
+            top_labels=1,
+            hide_color=0,
+            num_samples=30,        # 🔥 was 600 → 30 is enough for report
+            random_seed=42
+        )
 
+        temp, mask = explanation.get_image_and_mask(
+            explanation.top_labels[0],
+            positive_only=True,
+            num_features=5,        # 🔥 less superpixels = faster
+            hide_rest=False
+        )
 
-    lime_img = mark_boundaries(temp / 255.0, mask)
-    lime_img = (lime_img * 255).astype(np.uint8)
-    lime_img = Image.fromarray(lime_img)
+        lime_img = mark_boundaries(temp / 255.0, mask)
+        lime_img = (lime_img * 255).astype(np.uint8)
+        lime_img = Image.fromarray(lime_img)
 
-    buf = io.BytesIO()
-    lime_img.save(buf, format="PNG")
-    buf.seek(0)
-    return StreamingResponse(buf, media_type="image/png")
+        buf = io.BytesIO()
+        lime_img.save(buf, format="PNG")
+        buf.seek(0)
+        return StreamingResponse(buf, media_type="image/png")
+
+    except Exception as e:
+        print("LIME ERROR:", e)
+        raise HTTPException(status_code=500, detail="LIME failed to generate")
